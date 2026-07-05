@@ -1,0 +1,1451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PinkGlass Share - P2P Screen Sharing</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Styles -->
+    <style>
+        :root {
+            /* Color Palette */
+            --light-pink: #FFE4EC;
+            --soft-pink: #FFC1D6;
+            --rose-pink: #FF80AB;
+            --deep-pink: #EC407A;
+            --hot-pink: #E91E63;
+            
+            /* Glassmorphism */
+            --glass-bg: rgba(255, 255, 255, 0.4);
+            --glass-border: rgba(255, 255, 255, 0.6);
+            --glass-shadow: 0 8px 32px 0 rgba(233, 30, 99, 0.15);
+            --glass-blur: blur(16px);
+            
+            /* UI Elements */
+            --text-dark: #2D1A29;
+            --text-light: #fff;
+            --border-radius: 20px;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            
+            /* Dynamic */
+            --cam-size: 150px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #FFE4EC 0%, #FFC1D6 50%, #FF80AB 100%);
+            background-attachment: fixed;
+            color: var(--text-dark);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Glass Panel Class */
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--border-radius);
+            box-shadow: var(--glass-shadow);
+        }
+
+        /* Layout */
+        #app-container {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            grid-template-rows: auto 1fr auto;
+            height: 100vh;
+            gap: 10px;
+            padding: 10px;
+            transition: var(--transition);
+        }
+
+        /* Header */
+        header {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 15px;
+            z-index: 10;
+        }
+
+        .header-section {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--hot-pink);
+            text-shadow: 0 2px 4px rgba(255,255,255,0.5);
+        }
+
+        .badges {
+            display: flex;
+            gap: 8px;
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: rgba(255,255,255,0.7);
+            border: 1px solid var(--glass-border);
+        }
+        .badge.active { background: var(--hot-pink); color: white; }
+        .badge.error { background: #ff4757; color: white; }
+
+        /* Left Sidebar */
+        #left-sidebar {
+            grid-row: 2;
+            grid-column: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto;
+            padding: 15px;
+            width: 280px;
+            transition: width 0.3s, padding 0.3s, opacity 0.3s;
+        }
+
+        .hidden-sidebar {
+            width: 0 !important;
+            padding: 0 !important;
+            opacity: 0;
+            overflow: hidden !important;
+            border: none !important;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--soft-pink); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--rose-pink); }
+
+        /* Participant Cameras */
+        .cameras-section {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .cam-card {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16/9;
+            border-radius: 15px;
+            overflow: hidden;
+            background: rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .cam-card video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .cam-overlay {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            padding: 6px 10px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(4px);
+        }
+
+        .cam-overlay > div {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .btn-swap {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            cursor: pointer;
+            border-radius: 5px;
+            padding: 4px 8px;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-swap:hover {
+            background: var(--hot-pink);
+            transform: scale(1.1);
+        }
+
+        /* Controls / Accordion */
+        .settings-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .section-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--deep-pink);
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .control-group {
+            background: rgba(255,255,255,0.5);
+            padding: 12px;
+            border-radius: 12px;
+            margin-bottom: 10px;
+        }
+
+        select, input[type="text"], textarea {
+            width: 100%;
+            padding: 8px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--rose-pink);
+            background: rgba(255,255,255,0.8);
+            font-size: 0.85rem;
+            color: var(--text-dark);
+            outline: none;
+            margin-bottom: 10px;
+            transition: var(--transition);
+        }
+        
+        select:focus, input[type="text"]:focus, textarea:focus {
+            box-shadow: 0 0 0 2px var(--hot-pink);
+        }
+
+        /* Sliders */
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+            margin: 10px 0;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: var(--hot-pink);
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 2px 5px rgba(233, 30, 99, 0.4);
+        }
+        input[type="range"]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: var(--soft-pink);
+            border-radius: 2px;
+        }
+
+        .toggle-group {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            margin-bottom: 8px;
+        }
+        
+        /* Checkbox styling */
+        input[type="checkbox"] {
+            accent-color: var(--hot-pink);
+            width: 16px; height: 16px;
+        }
+
+        /* Main View */
+        #main-view {
+            grid-row: 2;
+            grid-column: 2;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            border-radius: var(--border-radius);
+            overflow: hidden;
+            background: rgba(0,0,0,0.05);
+        }
+
+        .main-header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 10px 15px;
+            background: linear-gradient(to bottom, rgba(255,255,255,0.8), transparent);
+            display: flex;
+            justify-content: space-between;
+            z-index: 2;
+        }
+
+        #main-screen-video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain; /* Fit/Fill handled via JS */
+            background: #111;
+        }
+
+        /* Right Sidebar (Stats) */
+        #right-sidebar {
+            grid-row: 2;
+            grid-column: 3;
+            padding: 15px;
+            overflow-y: auto;
+            width: 280px;
+            transition: width 0.3s, padding 0.3s, opacity 0.3s;
+        }
+
+        .stat-card {
+            background: rgba(255,255,255,0.6);
+            padding: 12px;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            font-size: 0.85rem;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            border-bottom: 1px solid rgba(255,193,214,0.3);
+            padding-bottom: 3px;
+        }
+        .stat-label { font-weight: 500; color: var(--rose-pink); }
+        .stat-val { font-weight: 600; }
+
+        /* Bottom Control Bar */
+        #bottom-bar {
+            grid-row: 3;
+            grid-column: 1 / -1;
+            padding: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            z-index: 10;
+        }
+
+        .btn {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            color: var(--text-dark);
+            padding: 10px 18px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.9rem;
+            transition: var(--transition);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+
+        .btn:hover {
+            background: white;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(233, 30, 99, 0.2);
+        }
+
+        .btn.active { background: var(--rose-pink); color: white; border-color: var(--deep-pink); }
+        .btn.danger { background: #ff4757; color: white; }
+        .btn.danger:hover { background: #ff6b81; }
+
+        .btn-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            padding: 0;
+            justify-content: center;
+            font-size: 1.1rem;
+        }
+
+        .btn-small {
+            width: 32px !important;
+            height: 32px !important;
+            font-size: 0.9rem !important;
+        }
+
+        /* Signaling Modal */
+        #signaling-modal {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 228, 236, 0.85);
+            backdrop-filter: blur(20px);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            transition: opacity 0.3s;
+        }
+        
+        #signaling-modal.hidden { display: none; opacity: 0; }
+
+        .sig-container {
+            width: 90%;
+            max-width: 1000px;
+            height: 90%;
+            background: white;
+            border-radius: 24px;
+            box-shadow: var(--glass-shadow);
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Wizard Sidebar in Modal */
+        .wizard-sidebar {
+            width: 250px;
+            background: var(--light-pink);
+            padding: 20px;
+            border-right: 1px solid var(--soft-pink);
+        }
+        
+        .wizard-step {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+            color: #666;
+            transition: var(--transition);
+        }
+        .wizard-step.active { color: var(--hot-pink); font-weight: 600; }
+        .wizard-step.done { color: #2ed573; }
+        
+        .sig-content {
+            flex: 1;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            background: var(--light-pink);
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: var(--transition);
+            border: 2px solid transparent;
+        }
+        .tab-btn.active {
+            background: var(--rose-pink);
+            color: white;
+            border-color: var(--deep-pink);
+        }
+
+        .tab-pane { display: none; flex-direction: column; gap: 15px; }
+        .tab-pane.active { display: flex; }
+
+        .token-area {
+            position: relative;
+        }
+
+        .token-area textarea {
+            height: 150px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            background: #f8f9fa;
+            border: 1px solid var(--soft-pink);
+            resize: vertical;
+        }
+
+        .token-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 5px;
+        }
+
+        /* ICE Candidates Styling */
+        .ice-blocks {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid var(--soft-pink);
+            padding: 10px;
+            border-radius: 10px;
+            background: #fafafa;
+        }
+        .ice-block {
+            background: white;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid #eee;
+            font-family: monospace;
+            font-size: 0.75rem;
+            word-break: break-all;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .close-modal-btn {
+            position: absolute;
+            top: 20px; right: 20px;
+            background: transparent; border: none; font-size: 1.5rem; color: var(--text-dark); cursor: pointer;
+        }
+
+        /* Animations */
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(233, 30, 99, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(233, 30, 99, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(233, 30, 99, 0); }
+        }
+        .recording-pulse { animation: pulse 2s infinite; border-color: var(--hot-pink) !important; }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            #app-container { grid-template-columns: auto 1fr; }
+            #right-sidebar { display: none !important; } /* Hide stats on tablet */
+            #toggle-right { display: none !important; }
+        }
+
+        @media (max-width: 768px) {
+            #app-container { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr auto; }
+            #left-sidebar { display: none !important; } 
+            #toggle-left { display: none !important; }
+            #bottom-bar { flex-wrap: wrap; }
+            .sig-container { flex-direction: column; }
+            .wizard-sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--soft-pink); }
+        }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <!-- Header -->
+    <header class="glass-panel">
+        <div class="header-section">
+            <button class="btn btn-icon btn-small" id="toggle-left" title="Toggle Left Sidebar"><i class="fas fa-bars"></i></button>
+            <div class="brand">
+                <i class="fas fa-gem"></i> PinkGlass Share
+            </div>
+        </div>
+        <div class="header-section">
+            <div class="badges">
+                <div id="badge-cam" class="badge"><i class="fas fa-video-slash"></i> Cam</div>
+                <div id="badge-mic" class="badge"><i class="fas fa-microphone-slash"></i> Mic</div>
+                <div id="badge-screen" class="badge"><i class="fas fa-desktop"></i> Screen</div>
+                <div id="badge-status" class="badge error">Disconnected</div>
+            </div>
+            <button class="btn btn-icon btn-small" id="toggle-right" title="Toggle Stats"><i class="fas fa-chart-bar"></i></button>
+        </div>
+    </header>
+
+    <!-- Left Sidebar -->
+    <aside id="left-sidebar" class="glass-panel">
+        
+        <div class="section-title">Cameras <i class="fas fa-users"></i></div>
+        <div class="cameras-section">
+            <div class="cam-card" id="local-cam-card">
+                <video id="local-cam-video" autoplay playsinline muted></video>
+                <div class="cam-overlay">
+                    <div><i class="fas fa-user"></i> Me <span id="local-mic-indicator"><i class="fas fa-microphone-slash"></i></span></div>
+                    <button class="btn-swap" onclick="swapWithMain('local-cam-video')" title="Pin to Main Screen"><i class="fas fa-thumbtack"></i></button>
+                </div>
+            </div>
+            <div class="cam-card" id="remote-cam-card">
+                <video id="remote-cam-video" autoplay playsinline></video>
+                <div class="cam-overlay">
+                    <div><i class="fas fa-user-friends"></i> Partner</div>
+                    <button class="btn-swap" onclick="swapWithMain('remote-cam-video')" title="Pin to Main Screen"><i class="fas fa-thumbtack"></i></button>
+                </div>
+            </div>
+            <div>
+                <label style="font-size: 0.8rem;">Camera Size</label>
+                <input type="range" id="cam-size-slider" min="100" max="300" value="150">
+            </div>
+        </div>
+
+        <div class="settings-panel">
+            <div class="section-title">Settings <i class="fas fa-cog"></i></div>
+            
+            <div class="control-group">
+                <label>Microphone</label>
+                <select id="audio-input-select"></select>
+                <div class="toggle-group">
+                    <span>Echo Cancellation</span>
+                    <input type="checkbox" id="echo-cancel" checked>
+                </div>
+                <div class="toggle-group">
+                    <span>Noise Suppression</span>
+                    <input type="checkbox" id="noise-suppress" checked>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>Camera</label>
+                <select id="video-input-select"></select>
+                <div class="toggle-group">
+                    <span>Resolution</span>
+                    <select id="res-select">
+                        <option value="720">720p</option>
+                        <option value="1080">1080p</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>Volumes</label>
+                <div>
+                    <span style="font-size: 0.8rem;"><i class="fas fa-volume-up"></i> Remote Output</span>
+                    <input type="range" id="remote-vol-slider" min="0" max="100" value="100">
+                </div>
+            </div>
+            
+            <button class="btn" id="open-signaling-btn" style="width:100%; justify-content:center; margin-top:10px;">
+                <i class="fas fa-link"></i> Connection Wizard
+            </button>
+        </div>
+    </aside>
+
+    <!-- Main View -->
+    <main id="main-view" class="glass-panel">
+        <div class="main-header">
+            <div style="font-weight: 600;">Main Display</div>
+            <div>
+                <button class="btn btn-icon" style="width:35px; height:35px;" id="btn-fit" title="Toggle Fit/Fill"><i class="fas fa-expand"></i></button>
+            </div>
+        </div>
+        <video id="main-screen-video" autoplay playsinline></video>
+
+        <!-- Signaling Modal Overlay -->
+        <div id="signaling-modal">
+            <div class="sig-container">
+                <button class="close-modal-btn" id="close-modal-btn"><i class="fas fa-times"></i></button>
+                
+                <div class="wizard-sidebar">
+                    <h3 style="color:var(--deep-pink); margin-bottom: 20px;">Connection Status</h3>
+                    <div id="wizard-steps-caller" style="display:block;">
+                        <div class="wizard-step active" id="c-step-1">🟣 1. Media Setup</div>
+                        <div class="wizard-step" id="c-step-2">⚪ 2. Generate Offer</div>
+                        <div class="wizard-step" id="c-step-3">⚪ 3. Receive Answer</div>
+                        <div class="wizard-step" id="c-step-4">⚪ 4. Exchange ICE</div>
+                        <div class="wizard-step" id="c-step-5">⚪ 5. Connected</div>
+                    </div>
+                    <div id="wizard-steps-answerer" style="display:none;">
+                        <div class="wizard-step active" id="a-step-1">🟣 1. Media Setup</div>
+                        <div class="wizard-step" id="a-step-2">⚪ 2. Paste Offer</div>
+                        <div class="wizard-step" id="a-step-3">⚪ 3. Generate Answer</div>
+                        <div class="wizard-step" id="a-step-4">⚪ 4. Exchange ICE</div>
+                        <div class="wizard-step" id="a-step-5">⚪ 5. Connected</div>
+                    </div>
+                </div>
+
+                <div class="sig-content">
+                    <h2 style="margin-bottom: 15px;">Manual Signaling Center</h2>
+                    <p style="font-size:0.9rem; margin-bottom:20px; color:#666;">Choose a role to establish a peer-to-peer connection without a server.</p>
+
+                    <div class="tabs">
+                        <div class="tab-btn active" id="tab-caller">I am Caller (Host)</div>
+                        <div class="tab-btn" id="tab-answerer">I am Answerer (Join)</div>
+                    </div>
+
+                    <!-- CALLER PANE -->
+                    <div class="tab-pane active" id="pane-caller">
+                        <div class="control-group">
+                            <div class="section-title">Step 1: Generate Offer</div>
+                            <button class="btn" id="btn-create-offer"><i class="fas fa-file-export"></i> Create Offer</button>
+                            <div class="token-area" style="margin-top:10px;">
+                                <textarea id="offer-output" readonly placeholder="Your generated offer will appear here..."></textarea>
+                                <div class="token-controls">
+                                    <button class="btn" onclick="copyToClipboard('offer-output')"><i class="fas fa-copy"></i> Copy</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <div class="section-title">Step 2: Paste Answer</div>
+                            <div class="token-area">
+                                <textarea id="answer-input" placeholder="Paste the Answer from your partner here..."></textarea>
+                                <div class="token-controls">
+                                    <button class="btn" id="btn-apply-answer"><i class="fas fa-check"></i> Apply Answer</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ANSWERER PANE -->
+                    <div class="tab-pane" id="pane-answerer">
+                        <div class="control-group">
+                            <div class="section-title">Step 1: Paste Offer</div>
+                            <div class="token-area">
+                                <textarea id="offer-input" placeholder="Paste the Offer from the host here..."></textarea>
+                                <div class="token-controls">
+                                    <button class="btn" id="btn-apply-offer"><i class="fas fa-check"></i> Apply Offer</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="control-group">
+                            <div class="section-title">Step 2: Generate Answer</div>
+                            <button class="btn" id="btn-create-answer" disabled><i class="fas fa-file-export"></i> Create Answer</button>
+                            <div class="token-area" style="margin-top:10px;">
+                                <textarea id="answer-output" readonly placeholder="Your generated answer will appear here..."></textarea>
+                                <div class="token-controls">
+                                    <button class="btn" onclick="copyToClipboard('answer-output')"><i class="fas fa-copy"></i> Copy</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- COMMON ICE PANE -->
+                    <div class="control-group" style="margin-top: 15px;">
+                        <div class="section-title">Step 3: Exchange ICE Candidates (Trickle)</div>
+                        <div style="display:flex; gap:20px;">
+                            <div style="flex:1;">
+                                <label style="font-size:0.8rem;">My Local Candidates (Send to Partner)</label>
+                                <div class="ice-blocks" id="local-ice-list"></div>
+                                <button class="btn" onclick="copyAllICE()" style="margin-top:5px; padding:5px 10px; font-size:0.8rem;"><i class="fas fa-copy"></i> Copy All</button>
+                            </div>
+                            <div style="flex:1;">
+                                <label style="font-size:0.8rem;">Remote Candidates (Paste from Partner)</label>
+                                <textarea id="remote-ice-input" style="height:150px; font-family:monospace; font-size:0.75rem;" placeholder="Paste JSON array or single candidate token here..."></textarea>
+                                <button class="btn" id="btn-add-ice" style="margin-top:5px; padding:5px 10px; font-size:0.8rem;"><i class="fas fa-plus"></i> Add Candidates</button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Right Sidebar (Stats) -->
+    <aside id="right-sidebar" class="glass-panel">
+        <div class="section-title">Connection Stats <i class="fas fa-chart-network"></i></div>
+        
+        <div class="stat-card">
+            <div class="stat-row"><span class="stat-label">Conn State:</span> <span class="stat-val" id="stat-conn-state">-</span></div>
+            <div class="stat-row"><span class="stat-label">ICE State:</span> <span class="stat-val" id="stat-ice-state">-</span></div>
+            <div class="stat-row"><span class="stat-label">Signaling:</span> <span class="stat-val" id="stat-sig-state">-</span></div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-row"><span class="stat-label">Local Cands:</span> <span class="stat-val" id="stat-local-cands">0</span></div>
+            <div class="stat-row"><span class="stat-label">Remote Cands:</span> <span class="stat-val" id="stat-remote-cands">0</span></div>
+            <div class="stat-row" style="margin-top:5px; font-size:0.7rem; color:#666;" id="stat-active-cand">STUN: -</div>
+        </div>
+        
+        <div class="stat-card">
+            <div class="stat-row"><span class="stat-label">Video Bitrate:</span> <span class="stat-val" id="stat-v-bitrate">0 kbps</span></div>
+            <div class="stat-row"><span class="stat-label">Audio Bitrate:</span> <span class="stat-val" id="stat-a-bitrate">0 kbps</span></div>
+            <div class="stat-row"><span class="stat-label">RTT / Ping:</span> <span class="stat-val" id="stat-rtt">- ms</span></div>
+        </div>
+    </aside>
+
+    <!-- Bottom Control Bar -->
+    <nav id="bottom-bar" class="glass-panel">
+        <button class="btn btn-icon" id="btn-toggle-cam" title="Toggle Camera (V)"><i class="fas fa-video"></i></button>
+        <button class="btn btn-icon" id="btn-toggle-mic" title="Toggle Mic (M)"><i class="fas fa-microphone"></i></button>
+        <button class="btn btn-icon" id="btn-share-screen" title="Share Screen (S)"><i class="fas fa-desktop"></i></button>
+        <div style="width: 2px; height: 30px; background: var(--glass-border); margin: 0 10px;"></div>
+        <button class="btn danger" id="btn-disconnect" title="Disconnect"><i class="fas fa-phone-slash"></i> End Session</button>
+        <button class="btn btn-icon" id="btn-fullscreen" title="Fullscreen (F)"><i class="fas fa-expand"></i></button>
+    </nav>
+</div>
+
+<!-- JavaScript Logic -->
+<script>
+    /**
+     * WebRTC PinkGlass Screen Share Logic
+     * Single File, No Backend, Manual Signaling
+     */
+
+    // --- State Variables ---
+    let localStream = null;
+    let screenStream = null;
+    let peerConnection = null;
+    let isCaller = true;
+    let localIceCandidates = [];
+    
+    // UI Elements
+    const els = {
+        localCam: document.getElementById('local-cam-video'),
+        remoteCam: document.getElementById('remote-cam-video'),
+        mainScreen: document.getElementById('main-screen-video'),
+        camSizeSlider: document.getElementById('cam-size-slider'),
+        modal: document.getElementById('signaling-modal'),
+        badges: {
+            cam: document.getElementById('badge-cam'),
+            mic: document.getElementById('badge-mic'),
+            screen: document.getElementById('badge-screen'),
+            status: document.getElementById('badge-status')
+        },
+        buttons: {
+            cam: document.getElementById('btn-toggle-cam'),
+            mic: document.getElementById('btn-toggle-mic'),
+            screen: document.getElementById('btn-share-screen'),
+            disconnect: document.getElementById('btn-disconnect'),
+            fit: document.getElementById('btn-fit')
+        },
+        stats: {
+            conn: document.getElementById('stat-conn-state'),
+            ice: document.getElementById('stat-ice-state'),
+            sig: document.getElementById('stat-sig-state'),
+            localCands: document.getElementById('stat-local-cands'),
+            remoteCands: document.getElementById('stat-remote-cands')
+        }
+    };
+
+    // WebRTC Config
+    const rtcConfig = {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+    };
+
+    // --- Initialization & UI Setup ---
+
+    function init() {
+        populateDevices();
+        setupEventListeners();
+        // Start local camera by default
+        toggleMedia('cam');
+    }
+
+    function setupEventListeners() {
+        // UI Toggles
+        document.getElementById('open-signaling-btn').addEventListener('click', () => els.modal.classList.remove('hidden'));
+        document.getElementById('close-modal-btn').addEventListener('click', () => els.modal.classList.add('hidden'));
+        
+        // Sidebar Toggles
+        document.getElementById('toggle-left').addEventListener('click', () => {
+            const sb = document.getElementById('left-sidebar');
+            sb.classList.toggle('hidden-sidebar');
+        });
+        
+        document.getElementById('toggle-right').addEventListener('click', () => {
+            const sb = document.getElementById('right-sidebar');
+            sb.classList.toggle('hidden-sidebar');
+        });
+
+        // Tabs
+        document.getElementById('tab-caller').addEventListener('click', () => switchTab('caller'));
+        document.getElementById('tab-answerer').addEventListener('click', () => switchTab('answerer'));
+
+        // Controls
+        els.buttons.cam.addEventListener('click', () => toggleMedia('cam'));
+        els.buttons.mic.addEventListener('click', () => toggleMedia('mic'));
+        els.buttons.screen.addEventListener('click', () => toggleScreenShare());
+        els.buttons.disconnect.addEventListener('click', disconnect);
+        
+        els.camSizeSlider.addEventListener('input', (e) => {
+            const size = e.target.value + 'px';
+            document.getElementById('local-cam-card').style.height = size;
+            document.getElementById('remote-cam-card').style.height = size;
+        });
+
+        els.buttons.fit.addEventListener('click', () => {
+            els.mainScreen.style.objectFit = els.mainScreen.style.objectFit === 'contain' ? 'cover' : 'contain';
+        });
+
+        document.getElementById('remote-vol-slider').addEventListener('input', (e) => {
+            els.remoteCam.volume = e.target.value / 100;
+            els.mainScreen.volume = e.target.value / 100;
+        });
+
+        // Signaling Buttons
+        document.getElementById('btn-create-offer').addEventListener('click', createOffer);
+        document.getElementById('btn-apply-answer').addEventListener('click', applyAnswer);
+        document.getElementById('btn-apply-offer').addEventListener('click', applyOffer);
+        document.getElementById('btn-create-answer').addEventListener('click', createAnswer);
+        document.getElementById('btn-add-ice').addEventListener('click', addRemoteICE);
+
+        // Keyboard Shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (els.modal.classList.contains('hidden') && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'INPUT') {
+                if (e.key.toLowerCase() === 'm') toggleMedia('mic');
+                if (e.key.toLowerCase() === 'v') toggleMedia('cam');
+                if (e.key.toLowerCase() === 's') toggleScreenShare();
+                if (e.key.toLowerCase() === 'f') toggleFullscreen();
+            }
+        });
+    }
+
+    function switchTab(role) {
+        isCaller = role === 'caller';
+        document.getElementById('tab-caller').classList.toggle('active', isCaller);
+        document.getElementById('tab-answerer').classList.toggle('active', !isCaller);
+        document.getElementById('pane-caller').classList.toggle('active', isCaller);
+        document.getElementById('pane-answerer').classList.toggle('active', !isCaller);
+        
+        document.getElementById('wizard-steps-caller').style.display = isCaller ? 'block' : 'none';
+        document.getElementById('wizard-steps-answerer').style.display = !isCaller ? 'block' : 'none';
+    }
+
+    function updateWizard(stepNum) {
+        const prefix = isCaller ? 'c' : 'a';
+        for(let i=1; i<=5; i++) {
+            const el = document.getElementById(`${prefix}-step-${i}`);
+            if(!el) continue;
+            el.classList.remove('active', 'done');
+            if (i < stepNum) {
+                el.classList.add('done');
+                el.innerText = el.innerText.replace(/[⚪🟣]/, '✅');
+            } else if (i === stepNum) {
+                el.classList.add('active');
+                el.innerText = el.innerText.replace(/[⚪✅]/, '🟣');
+            } else {
+                el.innerText = el.innerText.replace(/[✅🟣]/, '⚪');
+            }
+        }
+    }
+
+    function setBadge(type, active, error=false) {
+        const b = els.badges[type];
+        if(!b) return;
+        b.classList.remove('active', 'error');
+        if(error) b.classList.add('error');
+        else if(active) b.classList.add('active');
+        
+        // Update icons
+        const icon = b.querySelector('i');
+        if(type === 'cam') icon.className = active ? 'fas fa-video' : 'fas fa-video-slash';
+        if(type === 'mic') {
+            icon.className = active ? 'fas fa-microphone' : 'fas fa-microphone-slash';
+            document.getElementById('local-mic-indicator').innerHTML = `<i class="${icon.className}"></i>`;
+        }
+    }
+
+    function updateStatusBadge(state) {
+        const b = els.badges.status;
+        b.innerText = state;
+        b.className = 'badge';
+        if(state === 'connected') { b.classList.add('active'); b.innerHTML = '<i class="fas fa-check-circle"></i> Connected'; }
+        else if(state === 'failed' || state === 'disconnected') b.classList.add('error');
+    }
+
+    // --- Media Handling ---
+
+    async function populateDevices() {
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const aSelect = document.getElementById('audio-input-select');
+            const vSelect = document.getElementById('video-input-select');
+            aSelect.innerHTML = ''; vSelect.innerHTML = '';
+            
+            devices.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d.deviceId;
+                opt.text = d.label || `${d.kind} - ${d.deviceId.substring(0,5)}...`;
+                if(d.kind === 'audioinput') aSelect.appendChild(opt);
+                if(d.kind === 'videoinput') vSelect.appendChild(opt);
+            });
+        } catch(e) { console.error("Device enum error", e); }
+    }
+
+    async function toggleMedia(type) {
+        if (!localStream) {
+            // First time init
+            try {
+                const constraints = {
+                    audio: {
+                        echoCancellation: document.getElementById('echo-cancel').checked,
+                        noiseSuppression: document.getElementById('noise-suppress').checked
+                    },
+                    video: {
+                        width: { ideal: parseInt(document.getElementById('res-select').value) },
+                        height: { ideal: type==='cam'?720:1080 }
+                    }
+                };
+                
+                const aId = document.getElementById('audio-input-select').value;
+                const vId = document.getElementById('video-input-select').value;
+                if(aId) constraints.audio.deviceId = { exact: aId };
+                if(vId) constraints.video.deviceId = { exact: vId };
+
+                localStream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                if (!els.localCam.srcObject && els.mainScreen.srcObject !== localStream && els.remoteCam.srcObject !== localStream) {
+                    els.localCam.srcObject = localStream;
+                }
+                
+                // Mute logic based on initial toggle
+                localStream.getAudioTracks().forEach(t => t.enabled = type === 'mic');
+                localStream.getVideoTracks().forEach(t => t.enabled = type === 'cam');
+                
+                updateVideoStates();
+                updateMediaUI();
+                
+                // Add tracks to PC if it exists
+                if(peerConnection) {
+                    localStream.getTracks().forEach(t => {
+                        const senders = peerConnection.getSenders();
+                        const exists = senders.find(s => s.track && s.track.kind === t.kind);
+                        if(!exists) peerConnection.addTrack(t, localStream);
+                    });
+                }
+            } catch (err) {
+                console.error("GUM Error:", err);
+                alert("Could not access camera/microphone.");
+            }
+        } else {
+            // Toggle existing
+            if (type === 'cam') {
+                const track = localStream.getVideoTracks()[0];
+                if(track) track.enabled = !track.enabled;
+            } else if (type === 'mic') {
+                const track = localStream.getAudioTracks()[0];
+                if(track) track.enabled = !track.enabled;
+            }
+            updateMediaUI();
+        }
+    }
+
+    function updateMediaUI() {
+        if(!localStream) return;
+        const vEnabled = localStream.getVideoTracks()[0]?.enabled || false;
+        const aEnabled = localStream.getAudioTracks()[0]?.enabled || false;
+        
+        els.buttons.cam.classList.toggle('active', vEnabled);
+        els.buttons.mic.classList.toggle('active', aEnabled);
+        
+        setBadge('cam', vEnabled);
+        setBadge('mic', aEnabled);
+        
+        const card = document.getElementById('local-cam-card');
+        if(vEnabled) card.classList.add('recording-pulse');
+        else card.classList.remove('recording-pulse');
+    }
+
+    async function toggleScreenShare() {
+        if (!screenStream) {
+            try {
+                screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                
+                if (els.mainScreen.srcObject && els.mainScreen.srcObject !== localStream) {
+                    if (!els.remoteCam.srcObject) {
+                        els.remoteCam.srcObject = els.mainScreen.srcObject;
+                    }
+                }
+                els.mainScreen.srcObject = screenStream;
+                updateVideoStates();
+
+                els.mainScreen.parentElement.classList.add('recording-pulse');
+                els.buttons.screen.classList.add('active');
+                setBadge('screen', true);
+
+                // Handle system level stop
+                screenStream.getVideoTracks()[0].onended = () => {
+                    stopScreenShare();
+                };
+
+                // Add to PC
+                if (peerConnection) {
+                    screenStream.getTracks().forEach(track => {
+                        peerConnection.addTrack(track, screenStream);
+                    });
+                    // Need to renegotiate if connection is already established
+                    if(peerConnection.connectionState === 'connected') {
+                        alert("Screen share added. You may need to generate a new offer/answer to transmit the new stream in this basic manual signaling setup.");
+                    }
+                }
+            } catch (err) {
+                console.error("Screen Share Error:", err);
+            }
+        } else {
+            stopScreenShare();
+        }
+    }
+
+    function stopScreenShare() {
+        if(!screenStream) return;
+        screenStream.getTracks().forEach(t => t.stop());
+        
+        [els.localCam, els.remoteCam, els.mainScreen].forEach(vid => {
+            if (vid.srcObject === screenStream) {
+                vid.srcObject = null;
+            }
+        });
+        
+        screenStream = null;
+        updateVideoStates();
+
+        els.mainScreen.parentElement.classList.remove('recording-pulse');
+        els.buttons.screen.classList.remove('active');
+        setBadge('screen', false);
+        
+        // Removing tracks dynamically in purely manual signaling requires renegotiation.
+        // For simplicity, we just stop the tracks. The other side will see a frozen frame or black screen.
+    }
+
+    function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => {
+                console.log(`Error attempting to enable fullscreen: ${err.message}`);
+            });
+        } else {
+            document.exitFullscreen();
+        }
+    }
+
+
+    // --- WebRTC Core & Signaling ---
+
+    function setupPeerConnection() {
+        if (peerConnection) peerConnection.close();
+        
+        peerConnection = new RTCPeerConnection(rtcConfig);
+        localIceCandidates = [];
+        document.getElementById('local-ice-list').innerHTML = '';
+        els.stats.localCands.innerText = '0';
+        els.stats.remoteCands.innerText = '0';
+
+        // Add Local Media
+        if (localStream) {
+            localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
+        }
+        if (screenStream) {
+            screenStream.getTracks().forEach(t => peerConnection.addTrack(t, screenStream));
+        }
+
+        // Handle incoming tracks
+        peerConnection.ontrack = (event) => {
+            console.log("Received remote track:", event.track.kind, event.streams);
+            const stream = event.streams[0];
+            
+            if (event.track.kind === 'video') {
+                if (!els.mainScreen.srcObject) {
+                    els.mainScreen.srcObject = stream;
+                } else if (!els.remoteCam.srcObject && stream !== els.mainScreen.srcObject) {
+                    els.remoteCam.srcObject = stream;
+                } else if (stream !== els.mainScreen.srcObject && stream !== els.remoteCam.srcObject) {
+                    // Force new stream to main, push old main to remote
+                    els.remoteCam.srcObject = els.mainScreen.srcObject;
+                    els.mainScreen.srcObject = stream;
+                }
+                updateVideoStates();
+            } else if (event.track.kind === 'audio') {
+                if(!els.mainScreen.srcObject && !els.remoteCam.srcObject) {
+                     els.remoteCam.srcObject = stream;
+                     updateVideoStates();
+                }
+            }
+        };
+
+        // ICE Candidate Handling (Trickle)
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                localIceCandidates.push(event.candidate);
+                els.stats.localCands.innerText = localIceCandidates.length;
+                
+                // Add to UI for copying
+                const div = document.createElement('div');
+                div.className = 'ice-block';
+                div.innerHTML = `<span>${event.candidate.protocol} | ${event.candidate.type}</span> <button class="btn" style="padding:2px 8px; font-size:0.7rem;" onclick="copySingleICE(this)" data-ice='${JSON.stringify(event.candidate)}'><i class="fas fa-copy"></i></button>`;
+                document.getElementById('local-ice-list').appendChild(div);
+            }
+        };
+
+        // State changes
+        peerConnection.onconnectionstatechange = () => {
+            const state = peerConnection.connectionState;
+            els.stats.conn.innerText = state;
+            updateStatusBadge(state);
+            if(state === 'connected') {
+                updateWizard(5);
+                setTimeout(() => els.modal.classList.add('hidden'), 1500);
+            }
+        };
+        
+        peerConnection.oniceconnectionstatechange = () => {
+            els.stats.ice.innerText = peerConnection.iceConnectionState;
+        };
+        
+        peerConnection.onsignalingstatechange = () => {
+            els.stats.sig.innerText = peerConnection.signalingState;
+        };
+    }
+
+    // Token Formatting
+    function formatToken(type, jsonStr) {
+        return `====================================\nWEBRTC ${type.toUpperCase()}\nCreated: ${new Date().toLocaleString()}\nBrowser: ${navigator.userAgent}\n====================================\n\n${JSON.stringify(JSON.parse(jsonStr), null, 2)}\n\n====================================\nEND ${type.toUpperCase()}\n====================================`;
+    }
+
+    function extractJSON(formattedStr) {
+        try {
+            // Find the JSON block between the header and footer
+            const match = formattedStr.match(/({[\s\S]*})/);
+            if (match) {
+                return match[1];
+            }
+            // Fallback try raw parse
+            JSON.parse(formattedStr); 
+            return formattedStr;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // Caller: Step 1
+    async function createOffer() {
+        setupPeerConnection();
+        updateWizard(2);
+        try {
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            
+            const offerStr = JSON.stringify(peerConnection.localDescription);
+            document.getElementById('offer-output').value = formatToken('offer', offerStr);
+            
+        } catch(e) { alert("Error creating offer: " + e); }
+    }
+
+    // Caller: Step 2
+    async function applyAnswer() {
+        const rawText = document.getElementById('answer-input').value;
+        const jsonStr = extractJSON(rawText);
+        if(!jsonStr) return alert("Invalid Answer format.");
+        
+        try {
+            const answer = JSON.parse(jsonStr);
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+            updateWizard(4);
+            alert("Answer applied! Now exchange ICE candidates if not already connected.");
+        } catch(e) { alert("Error applying answer: " + e); }
+    }
+
+    // Answerer: Step 1
+    async function applyOffer() {
+        const rawText = document.getElementById('offer-input').value;
+        const jsonStr = extractJSON(rawText);
+        if(!jsonStr) return alert("Invalid Offer format.");
+        
+        setupPeerConnection();
+        updateWizard(2);
+        
+        try {
+            const offer = JSON.parse(jsonStr);
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            document.getElementById('btn-create-answer').disabled = false;
+            alert("Offer applied! Click Create Answer.");
+            updateWizard(3);
+        } catch(e) { alert("Error applying offer: " + e); }
+    }
+
+    // Answerer: Step 2
+    async function createAnswer() {
+        try {
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            
+            const answerStr = JSON.stringify(peerConnection.localDescription);
+            document.getElementById('answer-output').value = formatToken('answer', answerStr);
+            updateWizard(4);
+        } catch(e) { alert("Error creating answer: " + e); }
+    }
+
+    // ICE Handling
+    async function addRemoteICE() {
+        const input = document.getElementById('remote-ice-input').value.trim();
+        if(!input) return;
+        
+        try {
+            // Attempt to extract JSON if it's formatted
+            const jsonStr = extractJSON(input) || input;
+            const data = JSON.parse(jsonStr);
+            
+            const addIce = async (candidate) => {
+                if(candidate && candidate.candidate) {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                    let count = parseInt(els.stats.remoteCands.innerText) || 0;
+                    els.stats.remoteCands.innerText = count + 1;
+                }
+            };
+
+            if (Array.isArray(data)) {
+                for (const c of data) await addIce(c);
+            } else {
+                await addIce(data);
+            }
+            document.getElementById('remote-ice-input').value = '';
+            alert("ICE Candidate(s) added successfully.");
+        } catch (e) {
+            alert("Error parsing ICE candidates. Ensure valid JSON.");
+            console.error(e);
+        }
+    }
+
+    // --- Video State & Swap ---
+    function updateVideoStates() {
+        [els.localCam, els.remoteCam, els.mainScreen].forEach(vid => {
+            if (!vid.srcObject) {
+                vid.style.transform = 'none';
+                return;
+            }
+            
+            // Mirror local camera
+            if (vid.srcObject === localStream) {
+                vid.style.transform = 'scaleX(-1)';
+                vid.muted = true; // Never hear yourself
+            } 
+            else if (vid.srcObject === screenStream) {
+                vid.style.transform = 'none';
+                vid.muted = true; // Never hear your own screen share echo
+            }
+            else {
+                // Remote streams
+                vid.style.transform = 'none';
+                vid.muted = false; // Hear remote streams
+            }
+            
+            vid.play().catch(e => {});
+        });
+    }
+
+    window.swapWithMain = function(videoId) {
+        const sideVideo = document.getElementById(videoId);
+        const mainVideo = els.mainScreen;
+        
+        if (!sideVideo.srcObject && !mainVideo.srcObject) return;
+
+        const tempSrc = sideVideo.srcObject;
+        sideVideo.srcObject = mainVideo.srcObject;
+        mainVideo.srcObject = tempSrc;
+        
+        updateVideoStates();
+    }
+
+    // Utilities
+    window.copyToClipboard = function(elementId) {
+        const el = document.getElementById(elementId);
+        el.select();
+        document.execCommand('copy');
+        
+        // Visual feedback
+        const btn = el.nextElementSibling.querySelector('button');
+        const origText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+        setTimeout(() => btn.innerHTML = origText, 2000);
+    }
+
+    window.copySingleICE = function(btn) {
+        const data = btn.getAttribute('data-ice');
+        const formatted = formatToken('ice_candidate', data);
+        
+        const temp = document.createElement('textarea');
+        temp.value = formatted;
+        document.body.appendChild(temp);
+        temp.select();
+        document.execCommand('copy');
+        document.body.removeChild(temp);
+        
+        btn.innerHTML = '<i class="fas fa-check"></i>';
+        setTimeout(() => btn.innerHTML = '<i class="fas fa-copy"></i>', 1000);
+    }
+
+    window.copyAllICE = function() {
+        if(localIceCandidates.length === 0) return alert("No ICE candidates generated yet.");
+        const jsonArray = JSON.stringify(localIceCandidates, null, 2);
+        const formatted = formatToken('ice_candidates_array', jsonArray);
+        
+        const temp = document.createElement('textarea');
+        temp.value = formatted;
+        document.body.appendChild(temp);
+        temp.select();
+        document.execCommand('copy');
+        document.body.removeChild(temp);
+        alert("All local ICE candidates copied!");
+    }
+
+    function disconnect() {
+        if(peerConnection) {
+            peerConnection.close();
+            peerConnection = null;
+        }
+        if(els.mainScreen.srcObject) {
+            els.mainScreen.srcObject.getTracks().forEach(t => t.stop());
+            els.mainScreen.srcObject = null;
+        }
+        if(els.remoteCam.srcObject) {
+            els.remoteCam.srcObject.getTracks().forEach(t => t.stop());
+            els.remoteCam.srcObject = null;
+        }
+        
+        updateStatusBadge('disconnected');
+        els.stats.conn.innerText = '-';
+        els.stats.ice.innerText = '-';
+        els.stats.sig.innerText = '-';
+        
+        // reset UI
+        document.getElementById('offer-output').value = '';
+        document.getElementById('offer-input').value = '';
+        document.getElementById('answer-output').value = '';
+        document.getElementById('answer-input').value = '';
+        document.getElementById('local-ice-list').innerHTML = '';
+        document.getElementById('remote-ice-input').value = '';
+        document.getElementById('btn-create-answer').disabled = true;
+        updateWizard(1);
+        
+        els.modal.classList.remove('hidden');
+    }
+
+    // Stats Monitor
+    setInterval(async () => {
+        if(peerConnection && peerConnection.connectionState === 'connected') {
+            try {
+                const stats = await peerConnection.getStats();
+                stats.forEach(report => {
+                    if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                        els.stats.vBitrate.innerText = Math.round((report.bytesReceived || 0) * 8 / 1000 / (report.timestamp/1000)) + " kbps";
+                    }
+                    if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                        els.stats.rtt.innerText = (report.currentRoundTripTime * 1000).toFixed(0) + " ms";
+                    }
+                });
+            } catch(e){}
+        }
+    }, 2000);
+
+    // Boot
+    window.onload = init;
+
+</script>
+</body>
+</html>
