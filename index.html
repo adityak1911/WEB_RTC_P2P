@@ -29,9 +29,6 @@
             --text-light: #fff;
             --border-radius: 20px;
             --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            
-            /* Dynamic */
-            --cam-size: 150px;
         }
 
         * {
@@ -116,6 +113,7 @@
         }
         .badge.active { background: var(--hot-pink); color: white; }
         .badge.error { background: #ff4757; color: white; }
+        .badge.success { background: #2ed573; color: white; border-color: #2ed573; }
 
         /* Left Sidebar */
         #left-sidebar {
@@ -282,7 +280,6 @@
             margin-bottom: 8px;
         }
         
-        /* Checkbox styling */
         input[type="checkbox"] {
             accent-color: var(--hot-pink);
             width: 16px; height: 16px;
@@ -315,7 +312,7 @@
         #main-screen-video {
             width: 100%;
             height: 100%;
-            object-fit: contain; /* Fit/Fill handled via JS */
+            object-fit: contain;
             background: #111;
         }
 
@@ -540,7 +537,7 @@
         /* Responsive */
         @media (max-width: 1024px) {
             #app-container { grid-template-columns: auto 1fr; }
-            #right-sidebar { display: none !important; } /* Hide stats on tablet */
+            #right-sidebar { display: none !important; }
             #toggle-right { display: none !important; }
         }
 
@@ -570,6 +567,7 @@
                 <div id="badge-cam" class="badge"><i class="fas fa-video-slash"></i> Cam</div>
                 <div id="badge-mic" class="badge"><i class="fas fa-microphone-slash"></i> Mic</div>
                 <div id="badge-screen" class="badge"><i class="fas fa-desktop"></i> Screen</div>
+                <div id="badge-auto-sig" class="badge" title="Auto-Signaling via DataChannel" style="display:none;"><i class="fas fa-bolt"></i> Auto-Sync</div>
                 <div id="badge-status" class="badge error">Disconnected</div>
             </div>
             <button class="btn btn-icon btn-small" id="toggle-right" title="Toggle Stats"><i class="fas fa-chart-bar"></i></button>
@@ -648,7 +646,7 @@
         <div class="main-header">
             <div style="font-weight: 600;">Main Display</div>
             <div>
-                <button class="btn btn-icon" style="width:35px; height:35px;" id="btn-fit" title="Toggle Fit/Fill"><i class="fas fa-expand"></i></button>
+                <button class="btn btn-icon btn-small" id="btn-fit" title="Toggle Fit/Fill"><i class="fas fa-expand"></i></button>
             </div>
         </div>
         <video id="main-screen-video" autoplay playsinline></video>
@@ -678,7 +676,7 @@
 
                 <div class="sig-content">
                     <h2 style="margin-bottom: 15px;">Manual Signaling Center</h2>
-                    <p style="font-size:0.9rem; margin-bottom:20px; color:#666;">Choose a role to establish a peer-to-peer connection without a server.</p>
+                    <p style="font-size:0.9rem; margin-bottom:20px; color:#666;">Do this once to establish a peer-to-peer connection. After connected, screen sharing and camera toggles will be automatic.</p>
 
                     <div class="tabs">
                         <div class="tab-btn active" id="tab-caller">I am Caller (Host)</div>
@@ -735,7 +733,7 @@
 
                     <!-- COMMON ICE PANE -->
                     <div class="control-group" style="margin-top: 15px;">
-                        <div class="section-title">Step 3: Exchange ICE Candidates (Trickle)</div>
+                        <div class="section-title">Step 3: Exchange Initial ICE Candidates (Trickle)</div>
                         <div style="display:flex; gap:20px;">
                             <div style="flex:1;">
                                 <label style="font-size:0.8rem;">My Local Candidates (Send to Partner)</label>
@@ -793,7 +791,7 @@
 <script>
     /**
      * WebRTC PinkGlass Screen Share Logic
-     * Single File, No Backend, Manual Signaling
+     * Single File, No Backend, Manual -> Automatic Signaling
      */
 
     // --- State Variables ---
@@ -802,6 +800,11 @@
     let peerConnection = null;
     let isCaller = true;
     let localIceCandidates = [];
+    
+    // Auto-Signaling State (Perfect Negotiation Pattern)
+    let signalingChannel = null;
+    let makingOffer = false;
+    let ignoreOffer = false;
     
     // UI Elements
     const els = {
@@ -814,7 +817,8 @@
             cam: document.getElementById('badge-cam'),
             mic: document.getElementById('badge-mic'),
             screen: document.getElementById('badge-screen'),
-            status: document.getElementById('badge-status')
+            status: document.getElementById('badge-status'),
+            autoSig: document.getElementById('badge-auto-sig')
         },
         buttons: {
             cam: document.getElementById('btn-toggle-cam'),
@@ -828,7 +832,9 @@
             ice: document.getElementById('stat-ice-state'),
             sig: document.getElementById('stat-sig-state'),
             localCands: document.getElementById('stat-local-cands'),
-            remoteCands: document.getElementById('stat-remote-cands')
+            remoteCands: document.getElementById('stat-remote-cands'),
+            vBitrate: document.getElementById('stat-v-bitrate'),
+            rtt: document.getElementById('stat-rtt')
         }
     };
 
@@ -856,13 +862,11 @@
         
         // Sidebar Toggles
         document.getElementById('toggle-left').addEventListener('click', () => {
-            const sb = document.getElementById('left-sidebar');
-            sb.classList.toggle('hidden-sidebar');
+            document.getElementById('left-sidebar').classList.toggle('hidden-sidebar');
         });
         
         document.getElementById('toggle-right').addEventListener('click', () => {
-            const sb = document.getElementById('right-sidebar');
-            sb.classList.toggle('hidden-sidebar');
+            document.getElementById('right-sidebar').classList.toggle('hidden-sidebar');
         });
 
         // Tabs
@@ -1013,7 +1017,7 @@
                 updateVideoStates();
                 updateMediaUI();
                 
-                // Add tracks to PC if it exists
+                // Add tracks to PC if it exists (triggers onnegotiationneeded automatically if data channel is open)
                 if(peerConnection) {
                     localStream.getTracks().forEach(t => {
                         const senders = peerConnection.getSenders();
@@ -1076,15 +1080,12 @@
                     stopScreenShare();
                 };
 
-                // Add to PC
+                // Add to PC (This NOW triggers automatic renegotiation via the DataChannel)
                 if (peerConnection) {
                     screenStream.getTracks().forEach(track => {
                         peerConnection.addTrack(track, screenStream);
                     });
-                    // Need to renegotiate if connection is already established
-                    if(peerConnection.connectionState === 'connected') {
-                        alert("Screen share added. You may need to generate a new offer/answer to transmit the new stream in this basic manual signaling setup.");
-                    }
+                    // NO manual renegotiation alert here anymore! The perfect negotiation pattern handles it.
                 }
             } catch (err) {
                 console.error("Screen Share Error:", err);
@@ -1096,6 +1097,16 @@
 
     function stopScreenShare() {
         if(!screenStream) return;
+        
+        // Automatically remove tracks from peer connection to notify remote via renegotiation
+        if (peerConnection) {
+            const senders = peerConnection.getSenders();
+            screenStream.getTracks().forEach(track => {
+                const sender = senders.find(s => s.track === track);
+                if (sender) peerConnection.removeTrack(sender);
+            });
+        }
+        
         screenStream.getTracks().forEach(t => t.stop());
         
         [els.localCam, els.remoteCam, els.mainScreen].forEach(vid => {
@@ -1110,9 +1121,6 @@
         els.mainScreen.parentElement.classList.remove('recording-pulse');
         els.buttons.screen.classList.remove('active');
         setBadge('screen', false);
-        
-        // Removing tracks dynamically in purely manual signaling requires renegotiation.
-        // For simplicity, we just stop the tracks. The other side will see a frozen frame or black screen.
     }
 
     function toggleFullscreen() {
@@ -1125,192 +1133,6 @@
         }
     }
 
-
-    // --- WebRTC Core & Signaling ---
-
-    function setupPeerConnection() {
-        if (peerConnection) peerConnection.close();
-        
-        peerConnection = new RTCPeerConnection(rtcConfig);
-        localIceCandidates = [];
-        document.getElementById('local-ice-list').innerHTML = '';
-        els.stats.localCands.innerText = '0';
-        els.stats.remoteCands.innerText = '0';
-
-        // Add Local Media
-        if (localStream) {
-            localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
-        }
-        if (screenStream) {
-            screenStream.getTracks().forEach(t => peerConnection.addTrack(t, screenStream));
-        }
-
-        // Handle incoming tracks
-        peerConnection.ontrack = (event) => {
-            console.log("Received remote track:", event.track.kind, event.streams);
-            const stream = event.streams[0];
-            
-            if (event.track.kind === 'video') {
-                if (!els.mainScreen.srcObject) {
-                    els.mainScreen.srcObject = stream;
-                } else if (!els.remoteCam.srcObject && stream !== els.mainScreen.srcObject) {
-                    els.remoteCam.srcObject = stream;
-                } else if (stream !== els.mainScreen.srcObject && stream !== els.remoteCam.srcObject) {
-                    // Force new stream to main, push old main to remote
-                    els.remoteCam.srcObject = els.mainScreen.srcObject;
-                    els.mainScreen.srcObject = stream;
-                }
-                updateVideoStates();
-            } else if (event.track.kind === 'audio') {
-                if(!els.mainScreen.srcObject && !els.remoteCam.srcObject) {
-                     els.remoteCam.srcObject = stream;
-                     updateVideoStates();
-                }
-            }
-        };
-
-        // ICE Candidate Handling (Trickle)
-        peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-                localIceCandidates.push(event.candidate);
-                els.stats.localCands.innerText = localIceCandidates.length;
-                
-                // Add to UI for copying
-                const div = document.createElement('div');
-                div.className = 'ice-block';
-                div.innerHTML = `<span>${event.candidate.protocol} | ${event.candidate.type}</span> <button class="btn" style="padding:2px 8px; font-size:0.7rem;" onclick="copySingleICE(this)" data-ice='${JSON.stringify(event.candidate)}'><i class="fas fa-copy"></i></button>`;
-                document.getElementById('local-ice-list').appendChild(div);
-            }
-        };
-
-        // State changes
-        peerConnection.onconnectionstatechange = () => {
-            const state = peerConnection.connectionState;
-            els.stats.conn.innerText = state;
-            updateStatusBadge(state);
-            if(state === 'connected') {
-                updateWizard(5);
-                setTimeout(() => els.modal.classList.add('hidden'), 1500);
-            }
-        };
-        
-        peerConnection.oniceconnectionstatechange = () => {
-            els.stats.ice.innerText = peerConnection.iceConnectionState;
-        };
-        
-        peerConnection.onsignalingstatechange = () => {
-            els.stats.sig.innerText = peerConnection.signalingState;
-        };
-    }
-
-    // Token Formatting
-    function formatToken(type, jsonStr) {
-        return `====================================\nWEBRTC ${type.toUpperCase()}\nCreated: ${new Date().toLocaleString()}\nBrowser: ${navigator.userAgent}\n====================================\n\n${JSON.stringify(JSON.parse(jsonStr), null, 2)}\n\n====================================\nEND ${type.toUpperCase()}\n====================================`;
-    }
-
-    function extractJSON(formattedStr) {
-        try {
-            // Find the JSON block between the header and footer
-            const match = formattedStr.match(/({[\s\S]*})/);
-            if (match) {
-                return match[1];
-            }
-            // Fallback try raw parse
-            JSON.parse(formattedStr); 
-            return formattedStr;
-        } catch (e) {
-            return null;
-        }
-    }
-
-    // Caller: Step 1
-    async function createOffer() {
-        setupPeerConnection();
-        updateWizard(2);
-        try {
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            
-            const offerStr = JSON.stringify(peerConnection.localDescription);
-            document.getElementById('offer-output').value = formatToken('offer', offerStr);
-            
-        } catch(e) { alert("Error creating offer: " + e); }
-    }
-
-    // Caller: Step 2
-    async function applyAnswer() {
-        const rawText = document.getElementById('answer-input').value;
-        const jsonStr = extractJSON(rawText);
-        if(!jsonStr) return alert("Invalid Answer format.");
-        
-        try {
-            const answer = JSON.parse(jsonStr);
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-            updateWizard(4);
-            alert("Answer applied! Now exchange ICE candidates if not already connected.");
-        } catch(e) { alert("Error applying answer: " + e); }
-    }
-
-    // Answerer: Step 1
-    async function applyOffer() {
-        const rawText = document.getElementById('offer-input').value;
-        const jsonStr = extractJSON(rawText);
-        if(!jsonStr) return alert("Invalid Offer format.");
-        
-        setupPeerConnection();
-        updateWizard(2);
-        
-        try {
-            const offer = JSON.parse(jsonStr);
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-            document.getElementById('btn-create-answer').disabled = false;
-            alert("Offer applied! Click Create Answer.");
-            updateWizard(3);
-        } catch(e) { alert("Error applying offer: " + e); }
-    }
-
-    // Answerer: Step 2
-    async function createAnswer() {
-        try {
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-            
-            const answerStr = JSON.stringify(peerConnection.localDescription);
-            document.getElementById('answer-output').value = formatToken('answer', answerStr);
-            updateWizard(4);
-        } catch(e) { alert("Error creating answer: " + e); }
-    }
-
-    // ICE Handling
-    async function addRemoteICE() {
-        const input = document.getElementById('remote-ice-input').value.trim();
-        if(!input) return;
-        
-        try {
-            // Attempt to extract JSON if it's formatted
-            const jsonStr = extractJSON(input) || input;
-            const data = JSON.parse(jsonStr);
-            
-            const addIce = async (candidate) => {
-                if(candidate && candidate.candidate) {
-                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-                    let count = parseInt(els.stats.remoteCands.innerText) || 0;
-                    els.stats.remoteCands.innerText = count + 1;
-                }
-            };
-
-            if (Array.isArray(data)) {
-                for (const c of data) await addIce(c);
-            } else {
-                await addIce(data);
-            }
-            document.getElementById('remote-ice-input').value = '';
-            alert("ICE Candidate(s) added successfully.");
-        } catch (e) {
-            alert("Error parsing ICE candidates. Ensure valid JSON.");
-            console.error(e);
-        }
-    }
 
     // --- Video State & Swap ---
     function updateVideoStates() {
@@ -1352,13 +1174,293 @@
         updateVideoStates();
     }
 
+
+    // --- WebRTC Core & Perfect Negotiation ---
+
+    function setupPeerConnection() {
+        if (peerConnection) peerConnection.close();
+        
+        peerConnection = new RTCPeerConnection(rtcConfig);
+        localIceCandidates = [];
+        document.getElementById('local-ice-list').innerHTML = '';
+        els.stats.localCands.innerText = '0';
+        els.stats.remoteCands.innerText = '0';
+
+        // Set up in-band automatic signaling channel
+        if (isCaller) {
+            signalingChannel = peerConnection.createDataChannel('signaling');
+            setupSignalingChannel();
+        } else {
+            peerConnection.ondatachannel = (event) => {
+                if (event.channel.label === 'signaling') {
+                    signalingChannel = event.channel;
+                    setupSignalingChannel();
+                }
+            };
+        }
+
+        // Add Local Media
+        if (localStream) {
+            localStream.getTracks().forEach(t => peerConnection.addTrack(t, localStream));
+        }
+        if (screenStream) {
+            screenStream.getTracks().forEach(t => peerConnection.addTrack(t, screenStream));
+        }
+
+        // Perfect Negotiation Pattern - automatically runs when tracks are added/removed (e.g. screen share)
+        peerConnection.onnegotiationneeded = async () => {
+            if (!signalingChannel || signalingChannel.readyState !== 'open') {
+                return; // Initial setup relies on manual copy paste
+            }
+            try {
+                makingOffer = true;
+                const offer = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offer);
+                signalingChannel.send(JSON.stringify({ description: peerConnection.localDescription }));
+            } catch (err) {
+                console.error("Auto-negotiation error:", err);
+            } finally {
+                makingOffer = false;
+            }
+        };
+
+        // Handle incoming tracks
+        peerConnection.ontrack = (event) => {
+            console.log("Received remote track:", event.track.kind, event.streams);
+            const stream = event.streams[0];
+            
+            if (event.track.kind === 'video') {
+                if (!els.mainScreen.srcObject) {
+                    els.mainScreen.srcObject = stream;
+                } else if (!els.remoteCam.srcObject && stream !== els.mainScreen.srcObject) {
+                    els.remoteCam.srcObject = stream;
+                } else if (stream !== els.mainScreen.srcObject && stream !== els.remoteCam.srcObject) {
+                    // Force new stream to main, push old main to remote
+                    els.remoteCam.srcObject = els.mainScreen.srcObject;
+                    els.mainScreen.srcObject = stream;
+                }
+                updateVideoStates();
+            } else if (event.track.kind === 'audio') {
+                if(!els.mainScreen.srcObject && !els.remoteCam.srcObject) {
+                     els.remoteCam.srcObject = stream;
+                     updateVideoStates();
+                }
+            }
+        };
+
+        // Handle stream removals cleanly (auto-negotiation helps resolve this)
+        peerConnection.onremovetrack = (event) => {
+            [els.localCam, els.remoteCam, els.mainScreen].forEach(vid => {
+                if(vid.srcObject) {
+                    const tracks = vid.srcObject.getTracks();
+                    if(tracks.includes(event.track)) {
+                        vid.srcObject = null;
+                        updateVideoStates();
+                    }
+                }
+            });
+        };
+
+        // ICE Candidate Handling (Trickle & Auto-Forwarding)
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                // If we have an open signaling channel, send it automatically!
+                if (signalingChannel && signalingChannel.readyState === 'open') {
+                    signalingChannel.send(JSON.stringify({ candidate: event.candidate }));
+                } else {
+                    // Manual UI accumulation (only for the initial setup phase)
+                    localIceCandidates.push(event.candidate);
+                    els.stats.localCands.innerText = localIceCandidates.length;
+                    
+                    const div = document.createElement('div');
+                    div.className = 'ice-block';
+                    div.innerHTML = `<span>${event.candidate.protocol} | ${event.candidate.type}</span> <button class="btn" style="padding:2px 8px; font-size:0.7rem;" onclick="copySingleICE(this)" data-ice='${JSON.stringify(event.candidate)}'><i class="fas fa-copy"></i></button>`;
+                    document.getElementById('local-ice-list').appendChild(div);
+                }
+            }
+        };
+
+        // State changes
+        peerConnection.onconnectionstatechange = () => {
+            const state = peerConnection.connectionState;
+            els.stats.conn.innerText = state;
+            updateStatusBadge(state);
+            if(state === 'connected') {
+                updateWizard(5);
+                setTimeout(() => els.modal.classList.add('hidden'), 1500);
+            }
+        };
+        
+        peerConnection.oniceconnectionstatechange = () => {
+            els.stats.ice.innerText = peerConnection.iceConnectionState;
+        };
+        
+        peerConnection.onsignalingstatechange = () => {
+            if (!signalingChannel || signalingChannel.readyState !== 'open') {
+                els.stats.sig.innerText = peerConnection.signalingState;
+            }
+        };
+    }
+
+    // Auto-Signaling Channel Logic
+    function setupSignalingChannel() {
+        signalingChannel.onopen = () => {
+            console.log('In-band signaling channel opened!');
+            els.stats.sig.innerText = 'Auto-Active (Background)';
+            els.stats.sig.style.color = '#2ed573';
+            
+            // Show auto-sync badge to user
+            els.badges.autoSig.style.display = 'flex';
+            els.badges.autoSig.classList.add('success');
+        };
+        
+        signalingChannel.onclose = () => {
+            els.badges.autoSig.style.display = 'none';
+        }
+
+        signalingChannel.onmessage = async ({ data }) => {
+            const msg = JSON.parse(data);
+            const polite = !isCaller; // Caller is impolite, Answerer is polite
+            
+            try {
+                if (msg.description) {
+                    // Handle collision (Glare) logic
+                    const offerCollision = (msg.description.type === 'offer') && 
+                                           (makingOffer || peerConnection.signalingState !== 'stable');
+                    ignoreOffer = !polite && offerCollision;
+                    if (ignoreOffer) return;
+
+                    await peerConnection.setRemoteDescription(msg.description);
+                    if (msg.description.type === 'offer') {
+                        const answer = await peerConnection.createAnswer();
+                        await peerConnection.setLocalDescription(answer);
+                        signalingChannel.send(JSON.stringify({ description: peerConnection.localDescription }));
+                    }
+                } else if (msg.candidate) {
+                    try {
+                        await peerConnection.addIceCandidate(msg.candidate);
+                        let count = parseInt(els.stats.remoteCands.innerText) || 0;
+                        els.stats.remoteCands.innerText = count + 1;
+                    } catch(err) {
+                        if(!ignoreOffer) console.error("Error adding remote ICE via data channel", err);
+                    }
+                }
+            } catch(err) {
+                console.error("Auto-signaling error:", err);
+            }
+        };
+    }
+
+    // Token Formatting
+    function formatToken(type, jsonStr) {
+        return `====================================\nWEBRTC ${type.toUpperCase()}\nCreated: ${new Date().toLocaleString()}\nBrowser: ${navigator.userAgent}\n====================================\n\n${JSON.stringify(JSON.parse(jsonStr), null, 2)}\n\n====================================\nEND ${type.toUpperCase()}\n====================================`;
+    }
+
+    function extractJSON(formattedStr) {
+        try {
+            const match = formattedStr.match(/({[\s\S]*})/);
+            if (match) return match[1];
+            JSON.parse(formattedStr); 
+            return formattedStr;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // Caller: Step 1
+    async function createOffer() {
+        setupPeerConnection(); // Creates PC and the DataChannel
+        updateWizard(2);
+        try {
+            const offer = await peerConnection.createOffer();
+            await peerConnection.setLocalDescription(offer);
+            
+            const offerStr = JSON.stringify(peerConnection.localDescription);
+            document.getElementById('offer-output').value = formatToken('offer', offerStr);
+            
+        } catch(e) { alert("Error creating offer: " + e); }
+    }
+
+    // Caller: Step 2
+    async function applyAnswer() {
+        const rawText = document.getElementById('answer-input').value;
+        const jsonStr = extractJSON(rawText);
+        if(!jsonStr) return alert("Invalid Answer format.");
+        
+        try {
+            const answer = JSON.parse(jsonStr);
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+            updateWizard(4);
+            alert("Answer applied! Now exchange ICE candidates to connect.");
+        } catch(e) { alert("Error applying answer: " + e); }
+    }
+
+    // Answerer: Step 1
+    async function applyOffer() {
+        const rawText = document.getElementById('offer-input').value;
+        const jsonStr = extractJSON(rawText);
+        if(!jsonStr) return alert("Invalid Offer format.");
+        
+        setupPeerConnection(); // Creates PC (and waits for Caller's DataChannel)
+        updateWizard(2);
+        
+        try {
+            const offer = JSON.parse(jsonStr);
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+            document.getElementById('btn-create-answer').disabled = false;
+            alert("Offer applied! Click Create Answer.");
+            updateWizard(3);
+        } catch(e) { alert("Error applying offer: " + e); }
+    }
+
+    // Answerer: Step 2
+    async function createAnswer() {
+        try {
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+            
+            const answerStr = JSON.stringify(peerConnection.localDescription);
+            document.getElementById('answer-output').value = formatToken('answer', answerStr);
+            updateWizard(4);
+        } catch(e) { alert("Error creating answer: " + e); }
+    }
+
+    // Manual ICE Handling (Only needed during initial connection phase)
+    async function addRemoteICE() {
+        const input = document.getElementById('remote-ice-input').value.trim();
+        if(!input) return;
+        
+        try {
+            const jsonStr = extractJSON(input) || input;
+            const data = JSON.parse(jsonStr);
+            
+            const addIce = async (candidate) => {
+                if(candidate && candidate.candidate) {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                    let count = parseInt(els.stats.remoteCands.innerText) || 0;
+                    els.stats.remoteCands.innerText = count + 1;
+                }
+            };
+
+            if (Array.isArray(data)) {
+                for (const c of data) await addIce(c);
+            } else {
+                await addIce(data);
+            }
+            document.getElementById('remote-ice-input').value = '';
+            alert("ICE Candidate(s) added successfully.");
+        } catch (e) {
+            alert("Error parsing ICE candidates. Ensure valid JSON.");
+            console.error(e);
+        }
+    }
+
     // Utilities
     window.copyToClipboard = function(elementId) {
         const el = document.getElementById(elementId);
         el.select();
         document.execCommand('copy');
         
-        // Visual feedback
         const btn = el.nextElementSibling.querySelector('button');
         const origText = btn.innerHTML;
         btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
@@ -1395,6 +1497,10 @@
     }
 
     function disconnect() {
+        if (signalingChannel) {
+            signalingChannel.close();
+            signalingChannel = null;
+        }
         if(peerConnection) {
             peerConnection.close();
             peerConnection = null;
@@ -1409,6 +1515,7 @@
         }
         
         updateStatusBadge('disconnected');
+        els.badges.autoSig.style.display = 'none';
         els.stats.conn.innerText = '-';
         els.stats.ice.innerText = '-';
         els.stats.sig.innerText = '-';
