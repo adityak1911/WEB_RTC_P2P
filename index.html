@@ -1358,7 +1358,8 @@
 
     function extractJSON(formattedStr) {
         try {
-            const match = formattedStr.match(/({[\s\S]*})/);
+            // Updated Regex to match both JSON objects {} and JSON arrays []
+            const match = formattedStr.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
             if (match) return match[1];
             JSON.parse(formattedStr); 
             return formattedStr;
